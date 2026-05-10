@@ -17,18 +17,21 @@ The structural hash deliberately excludes tensor *values* (which vary per checkp
 
 ## Install
 
-```bash
-pip install weightprobe
-```
+v0.1 ships from source only. PyPI upload follows with v0.2.
 
-Or from source:
 ```bash
 git clone https://github.com/bdas-sec/weightprobe.git
 cd weightprobe
 pip install -e .
 ```
 
-v0.1 has **zero external runtime dependencies** (Python stdlib only).
+Or pip directly from the repo:
+
+```bash
+pip install git+https://github.com/bdas-sec/weightprobe.git@v0.1.0
+```
+
+v0.1 has **zero external runtime dependencies** (Python stdlib only). Requires Python 3.10+.
 
 ## Usage
 
