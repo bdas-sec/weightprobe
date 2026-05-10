@@ -93,7 +93,3 @@ Plus a separate provenance track: `keygen` / `sign` / `verify-signed` (OpenSSF M
 ## License
 
 MIT. See [LICENSE](LICENSE).
-
-## Background
-
-The defensive companion to research on the architectural-backdoor class against transformer LLMs - see paired offensive work disclosing the attack methodology against deployed cybersecurity-domain LLMs (responsible-disclosure timeline observed; Cisco PSIRT notified May 2026 before public release).

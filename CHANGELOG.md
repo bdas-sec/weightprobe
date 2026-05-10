@@ -2,6 +2,15 @@
 
 All notable changes to `weightprobe` are documented here. The project follows [Keep a Changelog](https://keepachangelog.com/) conventions and uses [Semantic Versioning](https://semver.org/).
 
+## [0.1.1] - 2026-05-10
+
+Docs-only patch. No code changes.
+
+### Changed
+
+- README now leads with `pip install weightprobe` (PyPI was published *after* the v0.1.0 README was finalised, so v0.1.0's PyPI page incorrectly states the package ships "from source only").
+- Removed "Background" section from README (research-context note; the GitHub repo is the right place for it, not the package description).
+
 ## [0.1.0] - 2026-05-10
 
 Initial public release. v0.1 ships the structural-attestation core of the toolkit; v0.2 (~late May 2026) will add the spectral, weight-diff, payload-shape, activation-delta scan, runtime live-probe, signing, and AI BOM modes.

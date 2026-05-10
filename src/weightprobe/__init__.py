@@ -18,7 +18,7 @@ to load model weights or run inference.
 from weightprobe.hash import compute_hash, structural_fingerprint
 from weightprobe.verify import verify, VerifyResult
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 __all__ = [
     "compute_hash",
