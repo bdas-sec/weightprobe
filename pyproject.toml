@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=69.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "weightprobe"
+version = "0.1.0"
+description = "Defensive tooling for architectural backdoors in transformer LLMs - structural attestation + baseline verification."
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [{name = "Bodhisattva Das", email = "bodhisattva.das@rudrasecure.com"}]
+keywords = [
+    "llm-security",
+    "supply-chain",
+    "backdoor-detection",
+    "model-attestation",
+    "transformer",
+    "safetensors",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Information Technology",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+# v0.1 has zero external runtime dependencies. Both modes (hash + verify)
+# operate on safetensors file headers using only the Python stdlib.
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.urls]
+Homepage     = "https://github.com/bdas-sec/weightprobe"
+Repository   = "https://github.com/bdas-sec/weightprobe"
+Issues       = "https://github.com/bdas-sec/weightprobe/issues"
+Changelog    = "https://github.com/bdas-sec/weightprobe/blob/main/CHANGELOG.md"
+
+[project.scripts]
+weightprobe = "weightprobe.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v"
