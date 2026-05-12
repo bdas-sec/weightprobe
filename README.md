@@ -1,19 +1,39 @@
 # weightprobe
 
-**Defensive tooling for architectural backdoors in transformer LLMs.**
+**Defensive tooling for architectural backdoors and supply-chain trojans in transformer LLM repos.**
 
-`weightprobe` is a static-analysis CLI that detects supply-chain attacks where a malicious adapter or weight-edit has been inserted into a transformer model directory. The tool reads `safetensors` file headers and `config.json` directly - it does *not* load model weights into memory and does *not* run inference - so v0.1 is fast and runs anywhere with Python 3.10+.
+`weightprobe` is a static-analysis CLI that detects two classes of supply-chain attack against HuggingFace-style model directories: (a) **architectural backdoors** — malicious adapters or weight-edits inserted into the model itself; (b) **loader-style trojans** — malicious scripts that ship *beside* untouched weights and execute when the user runs the repo's setup. The tool reads `safetensors` file headers, `config.json`, and the directory's file inventory directly. It does *not* load model weights into memory and does *not* run inference, so v0.1 is fast and runs anywhere with Python 3.10+.
 
 ## What v0.1 catches
 
-The architectural-backdoor class targets a model directory by inserting a small adapter file (typically ~150 KB) between two transformer blocks of an otherwise-clean model. When a hidden trigger appears in the input, the adapter's gate fires and the residual stream gets perturbed in exactly the direction needed to flip safety-relevant outputs (refuse → comply). v0.1 catches the *structural* signature of this class:
+| Mode | Catches | Threat model |
+|---|---|---|
+| `hash` | structural-fingerprint hash of a model directory (tensor inventory + filtered config + adapter presence). Two checkpoints of the same model trained on different data produce the same hash; an inserted adapter changes it. | architectural backdoor |
+| `verify` | comparison against a known-good baseline, given either as a hex digest (vendor-published) or a reference model directory (with structured diff: tensors added / removed, config field deltas, adapter presence). | architectural backdoor |
+| `inventory` *(new in v0.1.2)* | flags every file in the repo that isn't on a model-only allow-list. Catches `loader.py`-style trojans where the malicious code ships *beside* untouched weights — the class that the structural-hash modes are blind to by design. | loader-style supply-chain trojan |
 
-| Mode | Catches |
-|---|---|
-| `hash` | structural-fingerprint hash of a model directory (tensor inventory + filtered config + adapter presence). Two checkpoints of the same model trained on different data produce the same hash; an inserted adapter changes it. |
-| `verify` | comparison against a known-good baseline, given either as a hex digest (vendor-published) or a reference model directory (with structured diff: tensors added / removed, config field deltas, adapter presence). |
+### Architectural-backdoor class (hash / verify)
 
-The structural hash deliberately excludes tensor *values* (which vary per checkpoint) and runtime / training-time config fields (`transformers_version`, `_name_or_path`, `_commit_hash`, `use_cache`, `torch_dtype`, `auto_map`, `attn_implementation`). Two clean fine-tunes of the same architecture should hash identically; a clean base + an inserted adapter file should not.
+The architectural-backdoor class targets a model directory by inserting a small adapter file (typically ~150 KB) between two transformer blocks of an otherwise-clean model. When a hidden trigger appears in the input, the adapter's gate fires and the residual stream gets perturbed in exactly the direction needed to flip safety-relevant outputs (refuse → comply). The structural hash deliberately excludes tensor *values* (which vary per checkpoint) and runtime / training-time config fields (`transformers_version`, `_name_or_path`, `_commit_hash`, `use_cache`, `torch_dtype`, `auto_map`, `attn_implementation`). Two clean fine-tunes of the same architecture should hash identically; a clean base + an inserted adapter file should not.
+
+### Loader-style trojan class (inventory)
+
+In May 2026, [HiddenLayer Research disclosed](https://thehackernews.com/2026/05/fake-openai-privacy-filter-repo-hits-1.html) a HuggingFace repo `Open-OSS/privacy-filter` that typo-squatted OpenAI's legitimate Privacy Filter model card. The weights and `config.json` were identical to the real model; the attack lived in `loader.py` (a Base64-decoded PowerShell downloader) and `start.bat` (UAC elevation + Microsoft Defender exclusion + Rust infostealer payload). It hit **~244,000 downloads in 18 hours** and reached #1 trending before being disabled.
+
+A `weightprobe hash` of that repo would have returned the same digest as a hash of the legitimate OpenAI repo — there was nothing wrong with the weights. `weightprobe inventory` flags the attack in one command:
+
+```bash
+$ weightprobe inventory ./privacy-filter/
+[FLAGGED] ./privacy-filter/
+  5/8 files allowed; 3 flagged (3 HIGH / 0 MEDIUM / 0 LOW)
+  [HIGH] loader.py    — executable/script extension '.py' — should not ship in a pure-weights repo
+  [HIGH] start.bat    — executable/script extension '.bat' — should not ship in a pure-weights repo
+  [HIGH] stealer.exe  — executable/script extension '.exe' — should not ship in a pure-weights repo
+$ echo $?
+1
+```
+
+Severity classes: HIGH = executable / script extensions (`*.py`, `*.sh`, `*.bat`, `*.exe`, `*.dll`, `*.so`, `*.rs`, …); MEDIUM = build / dependency manifests (`requirements*.txt`, `Pipfile`, …); LOW = unrecognised but non-executable files. Default severity floor is HIGH (CI-friendly).
 
 ## Install
 
@@ -21,7 +41,7 @@ The structural hash deliberately excludes tensor *values* (which vary per checkp
 pip install weightprobe
 ```
 
-v0.1 has **zero external runtime dependencies** (Python stdlib only). Requires Python 3.10+. Available on [PyPI](https://pypi.org/project/weightprobe/).
+**Zero external runtime dependencies** (Python stdlib only). Requires Python 3.10+. Available on [PyPI](https://pypi.org/project/weightprobe/).
 
 For development:
 
@@ -72,11 +92,38 @@ weightprobe verify /path/to/possibly-trojaned/ \
 
 Exit code: `0` on match, `1` on mismatch - integrate into CI / model-deployment pipelines as a pre-load check.
 
+### Inventory a model repo for loader-style trojans
+
+```bash
+weightprobe inventory /path/to/possibly-trojaned/
+# [FLAGGED] /path/to/possibly-trojaned/
+#   5/8 files allowed; 3 flagged (3 HIGH / 0 MEDIUM / 0 LOW)
+#   [HIGH] loader.py    — executable/script extension '.py' — should not ship in a pure-weights repo
+#   [HIGH] start.bat    — executable/script extension '.bat' — should not ship in a pure-weights repo
+#   [HIGH] stealer.exe  — executable/script extension '.exe' — should not ship in a pure-weights repo
+
+weightprobe inventory /path/to/model-dir/ --json
+# {
+#   "n_files_total": 8,
+#   "n_files_allowed": 5,
+#   "n_files_flagged": 3,
+#   "has_executable": true,
+#   "findings": [...],
+#   "allowed_files": ["LICENSE", "README.md", "config.json", "model.safetensors", "tokenizer.json"]
+# }
+
+weightprobe inventory /path/to/model-dir/ --severity MEDIUM
+# Lower the bar to also fail on build manifests (requirements.txt, Pipfile, etc.)
+```
+
+Exit code: `0` if no findings at or above `--severity` (default HIGH); `1` otherwise. No baseline required — the allow-list is built in.
+
 ## Use cases
 
-- **CI gate** for model-serving infrastructure: refuse to deploy a model directory whose hash does not match the published vendor digest.
+- **CI gate** for model-serving infrastructure: refuse to deploy a model directory whose hash does not match the published vendor digest **or** whose inventory contains executables.
 - **Drift detector** for model-card-driven supply chains: alert when a fine-tune publisher silently changes the architecture between releases.
 - **Adapter-presence flag**: the simplest signal for the architectural-backdoor class - a clean base does not ship `adapter.safetensors`; an inserted trojan does.
+- **Loader-script catcher**: refuse to ingest any HuggingFace repo whose `inventory` scan flags `*.py` / `*.bat` / `*.sh` / `*.exe` etc. — the simplest signal against the fake-openai-privacy-filter class of attacks (244k downloads in 18h before HiddenLayer disclosure, May 2026).
 
 ## Roadmap
 

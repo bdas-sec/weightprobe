@@ -1,4 +1,11 @@
-"""weightprobe CLI - argparse entrypoint for v0.1 modes (hash + verify).
+"""weightprobe CLI - argparse entrypoint.
+
+Modes (v0.1.2):
+  hash       — structural fingerprint of model weights + config
+  verify     — compare a target dir against a known-good baseline
+  inventory  — flag files that aren't on the model-only allow-list
+               (catches loader.py-style supply-chain trojans where the
+                malice ships beside the weights instead of inside them)
 
 v0.2 will add: spectral, diff-base, payload-shape, scan, live-probe,
 rev-trigger, plus signing + AIBOM emission.
@@ -12,6 +19,7 @@ from pathlib import Path
 
 from weightprobe import __version__
 from weightprobe.hash import compute_hash
+from weightprobe.inventory import scan_inventory
 from weightprobe.verify import verify
 
 
@@ -23,6 +31,37 @@ def _cmd_hash(args: argparse.Namespace) -> int:
     else:
         print(digest)
     return 0
+
+
+def _cmd_inventory(args: argparse.Namespace) -> int:
+    """`weightprobe inventory <model_dir> [--json] [--severity HIGH|MEDIUM|LOW]`"""
+    rep = scan_inventory(Path(args.model_dir))
+
+    # Apply severity floor (only return non-zero / show findings at or above).
+    severity_rank = {"LOW": 0, "MEDIUM": 1, "HIGH": 2}
+    floor = severity_rank[args.severity]
+    flagged = [f for f in rep.findings if severity_rank[f.severity] >= floor]
+    fail = bool(flagged)
+
+    if args.json:
+        d = rep.to_dict()
+        d["findings"] = [f.to_dict() for f in flagged]
+        d["severity_floor"] = args.severity
+        print(json.dumps(d, indent=2))
+    else:
+        if rep.is_clean:
+            print(f"[CLEAN] {args.model_dir}")
+            print(f"  {rep.n_files_allowed}/{rep.n_files_total} files match model-only allow-list")
+        else:
+            verdict = "FLAGGED" if fail else "CLEAN-at-floor"
+            print(f"[{verdict}] {args.model_dir}")
+            print(f"  {rep.n_files_allowed}/{rep.n_files_total} files allowed; "
+                  f"{rep.n_files_flagged} flagged ({sum(1 for f in rep.findings if f.severity=='HIGH')} HIGH / "
+                  f"{sum(1 for f in rep.findings if f.severity=='MEDIUM')} MEDIUM / "
+                  f"{sum(1 for f in rep.findings if f.severity=='LOW')} LOW)")
+            for f in flagged:
+                print(f"  [{f.severity}] {f.relative_path}  ({f.size_bytes} bytes) — {f.reason}")
+    return 1 if fail else 0
 
 
 def _cmd_verify(args: argparse.Namespace) -> int:
@@ -46,9 +85,11 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="weightprobe",
         description=(
-            "Defensive tooling for architectural backdoors in transformer LLMs. "
-            "v0.1 ships structural fingerprint (hash) and baseline-comparison (verify) "
-            "modes. v0.2 will add spectral / diff / scan / live-probe / signing modes."
+            "Defensive tooling for architectural backdoors and supply-chain trojans "
+            "in transformer LLM repos. v0.1.2 ships three modes: hash + verify "
+            "(structural attestation against architectural-backdoor adapters), and "
+            "inventory (allow-list scan against loader.py-style trojans). "
+            "v0.2 will add spectral / diff / scan / live-probe / signing modes."
         ),
     )
     p.add_argument("--version", action="version", version=f"weightprobe {__version__}")
@@ -74,6 +115,21 @@ def build_parser() -> argparse.ArgumentParser:
         "--json", action="store_true",
         help="Output the full result as JSON.")
     vp.set_defaults(fn=_cmd_verify)
+
+    # inventory — catch trojan files that ship beside the weights
+    ip = sub.add_parser(
+        "inventory",
+        help=("Flag files that aren't on the model-only allow-list "
+              "(catches loader.py-style supply-chain trojans)."))
+    ip.add_argument("model_dir", help="Path to the target model directory.")
+    ip.add_argument(
+        "--json", action="store_true",
+        help="Output the full inventory report as JSON.")
+    ip.add_argument(
+        "--severity", choices=["LOW", "MEDIUM", "HIGH"], default="HIGH",
+        help=("Minimum severity to flag (default HIGH = executables only). "
+              "Exit code 1 if any flag at or above this floor."))
+    ip.set_defaults(fn=_cmd_inventory)
 
     return p
 

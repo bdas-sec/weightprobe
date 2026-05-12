@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "weightprobe"
-version = "0.1.1"
-description = "Defensive tooling for architectural backdoors in transformer LLMs - structural attestation + baseline verification."
+version = "0.1.2"
+description = "Defensive tooling for architectural backdoors and supply-chain trojans in transformer LLM repos - structural attestation, baseline verification, and repo-inventory allow-list."
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
