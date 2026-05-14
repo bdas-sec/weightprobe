@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "weightprobe"
-version = "0.1.2"
-description = "Defensive tooling for architectural backdoors and supply-chain trojans in transformer LLM repos - structural attestation, baseline verification, and repo-inventory allow-list."
+version = "0.2.0"
+description = "Defensive tooling for architectural backdoors and supply-chain trojans in transformer LLM repos - nine detection modes (hash, verify, inventory, spectral, diff-base, payload-shape, scan, live-probe, rev-trigger) plus OpenSSF-style signing and OWASP AI BOM emission."
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
@@ -30,12 +30,29 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 
-# v0.1 has zero external runtime dependencies. Both modes (hash + verify)
-# operate on safetensors file headers using only the Python stdlib.
-dependencies = []
+# Required at runtime: numpy (for spectral / diff-base / scan / live-probe
+# numerical routines) and safetensors (for tensor header reads). Together
+# these are ~30 MB. The structural-only modes (hash, verify, inventory)
+# don't use either at runtime but they ship in the same package; pinning
+# both here keeps `pip install weightprobe` a single-step install for the
+# common case.
+dependencies = [
+    "numpy>=1.24",
+    "safetensors>=0.4",
+]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
+# MLX-backed runtime modes — scan (adapter-aware activation probe),
+# live-probe (per-prompt z-score classifier). Mac / Apple-Silicon only.
+runtime = ["mlx>=0.20", "mlx-lm>=0.19"]
+# OpenSSF Model-Signing-style ed25519 signing + AIBOM emission.
+signing = ["cryptography>=42.0"]
+# Convenience: everything.
+full = [
+    "weightprobe[runtime]",
+    "weightprobe[signing]",
+]
 
 [project.urls]
 Homepage     = "https://github.com/bdas-sec/weightprobe"

@@ -2,15 +2,23 @@
 
 **Defensive tooling for architectural backdoors and supply-chain trojans in transformer LLM repos.**
 
-`weightprobe` is a static-analysis CLI that detects two classes of supply-chain attack against HuggingFace-style model directories: (a) **architectural backdoors** — malicious adapters or weight-edits inserted into the model itself; (b) **loader-style trojans** — malicious scripts that ship *beside* untouched weights and execute when the user runs the repo's setup. The tool reads `safetensors` file headers, `config.json`, and the directory's file inventory directly. It does *not* load model weights into memory and does *not* run inference, so v0.1 is fast and runs anywhere with Python 3.10+.
+`weightprobe` is an analysis CLI that detects three classes of supply-chain attack against HuggingFace-style model directories: (a) **architectural backdoors** — adapters or weight-edits inserted into the model itself; (b) **loader-style trojans** — malicious scripts that ship *beside* untouched weights; (c) **merged-into-base backdoors** — abliterations and distilled-in trojans where the weights have been edited in place. Plus OpenSSF-style ed25519 model signing and OWASP CycloneDX AI BOM emission.
 
-## What v0.1 catches
+## What v0.2 catches
 
 | Mode | Catches | Threat model |
 |---|---|---|
-| `hash` | structural-fingerprint hash of a model directory (tensor inventory + filtered config + adapter presence). Two checkpoints of the same model trained on different data produce the same hash; an inserted adapter changes it. | architectural backdoor |
-| `verify` | comparison against a known-good baseline, given either as a hex digest (vendor-published) or a reference model directory (with structured diff: tensors added / removed, config field deltas, adapter presence). | architectural backdoor |
-| `inventory` *(new in v0.1.2)* | flags every file in the repo that isn't on a model-only allow-list. Catches `loader.py`-style trojans where the malicious code ships *beside* untouched weights — the class that the structural-hash modes are blind to by design. | loader-style supply-chain trojan |
+| `hash` | structural-fingerprint hash of a model directory (tensor inventory + filtered config + adapter presence) | architectural backdoor (separate file) |
+| `verify` | comparison against a known-good baseline, given either as a hex digest or a reference model directory (with structured diff) | architectural backdoor (separate file) |
+| `inventory` | flags every file in the repo that isn't on a model-only allow-list — catches `loader.py`-style trojans | loader-style supply-chain trojan |
+| `spectral` *(new in v0.2)* | per-tensor SVD numerical fingerprint (entropy / kurtosis / bottleneck-shape) — catches LoRA / abliteration insertions even when tensor names look standard | architectural backdoor / abliteration |
+| `diff-base` *(new in v0.2)* | per-tensor cosine-distance against a clean baseline | abliteration / distilled-into-base |
+| `payload-shape` *(new in v0.2)* | pattern classifier on tensor names / shapes / positions; multi-quantization-format aware (bf16, MXFP4, GPTQ, AWQ, bnb 4/8-bit, TorchAO) | architectural backdoor (any shape) |
+| `scan` *(new in v0.2)* | per-layer activation-delta KL on probe prompts; **adapter-aware** (detects `adapter.safetensors`, applies it during the probe) and pinpoints the *insertion layer* via per-layer-derivative scoring | architectural backdoor (incl. runtime-only) |
+| `live-probe` *(new in v0.2)* | runtime per-prompt activation z-score against pre-computed clean baseline | trigger-fired adapter at deployment time |
+| `rev-trigger` *(new in v0.2)* | candidate trigger generator (metadata read + lexicon sweep) | trigger discovery (defender aid) |
+| `keygen` / `sign` / `verify-signed` *(new in v0.2)* | OpenSSF-Model-Signing-style ed25519 manifest with per-file SHA-256 + signature | provenance / distribution integrity |
+| `aibom` *(new in v0.2)* | OWASP CycloneDX 1.6 AI BOM emission with `vulnerabilities[]` from weightprobe scan results | inventory / disclosure (supply chain) |
 
 ### Architectural-backdoor class (hash / verify)
 
@@ -38,10 +46,13 @@ Severity classes: HIGH = executable / script extensions (`*.py`, `*.sh`, `*.bat`
 ## Install
 
 ```bash
-pip install weightprobe
+pip install weightprobe                # hash, verify, inventory, spectral, diff-base, payload-shape, rev-trigger
+pip install "weightprobe[runtime]"     # + scan, live-probe (MLX-backed; Apple Silicon)
+pip install "weightprobe[signing]"     # + sign / verify-signed / aibom (cryptography)
+pip install "weightprobe[full]"        # everything
 ```
 
-**Zero external runtime dependencies** (Python stdlib only). Requires Python 3.10+. Available on [PyPI](https://pypi.org/project/weightprobe/).
+Base install pulls `numpy` + `safetensors` (~30 MB). Optional extras layer on heavier backends. Requires Python 3.10+. Available on [PyPI](https://pypi.org/project/weightprobe/).
 
 For development:
 
